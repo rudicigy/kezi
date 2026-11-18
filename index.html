@@ -1,0 +1,298 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="100%" height="100%">
+    <foreignObject width="100%" height="100%">
+        <html xmlns="http://www.w3.org/1999/xhtml">
+            <head>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                <title>天天好料</title>
+                <script src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js"></script>
+        		<script>
+        			if (typeof wx !== 'undefined') {
+        				window.wxjs = wx;
+        			} else {
+        				console.error('微信 JS-SDK 加载失败，wx 未定义');
+        			}
+        		</script>
+            </head>
+            <style>
+                *{
+                    margin: 0;
+                    padding: 0;
+                }
+                html, body {
+                    width: 100%;
+                    height: 100%;
+                    overflow: hidden;
+                }
+                #loading {
+                    position: fixed;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    font-size: 16px;
+                    color: #666;
+                    z-index: 999;
+                }
+                #dynamicIframe {
+                    display: none;
+                    width: 100%;
+                    height: 100%;
+                    border: none;
+                }
+                #dynamicIframe.active {
+                    display: block;
+                }
+            </style>
+            <body translate="no">
+                <div id="loading">加载中...</div>
+                <div id="linkNotice" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;padding:20px;z-index:1000;text-align:center;">
+                    <p style="margin:0 0 10px;">原链接已失效，请保存新的分享链接：</p>
+                    <input id="newLink" readonly style="width:260px;margin-bottom:10px;" />
+                    <button id="copyLink">复制链接</button>
+                </div>
+                <iframe id="dynamicIframe" src="" width="100%" height="100%" frameborder="0"></iframe>
+                <script>
+                    // 获取当前域名和参数
+                    const currentDomain = window.location.origin;
+                    const currentSearch = window.location.search;
+                    console.log(`当前域名: ${currentDomain}`);
+                    console.log(`当前参数: ${currentSearch}`);
+
+                    // 解析 URL 参数，提取 token、访问标识、微信授权码与 state
+                    function getUrlParams() {
+                        const params = new URLSearchParams(currentSearch);
+                        return {
+                            t: params.get('t') || '',
+                            v: params.get('v') || '',
+                            accessToken: params.get('accessToken') || '',
+                            refreshToken: params.get('refreshToken') || ''
+                        };
+                    }
+
+                    const urlParams = getUrlParams();
+                    console.log(`解析到的参数: t=${urlParams.t}`);
+
+                    // 微信浏览器检测
+                    const isWeChatBrowser = /MicroMessenger/i.test(navigator.userAgent);
+                    // 渠道类型：微信内核浏览器 wechat_h5，否则 h5
+                    const channelType = isWeChatBrowser ? 'wechat_h5' : 'h5';
+
+                    // 微信 H5 授权：无 accessToken 时先走 oauth-jump 一次直达微信授权，回跳后带上 accessToken 再继续
+                    let oauthRedirecting = false;
+                    if (isWeChatBrowser && !urlParams.accessToken) {
+                        oauthRedirecting = true;
+                        fetch(`https://javaapi.tthaol.com/app-api/site/share/oauth-jump?type=31&t=${encodeURIComponent(urlParams.t)}&v=${encodeURIComponent(urlParams.v)}`, {
+                            headers: {
+                                "channel-type": channelType,
+                            },
+                        })
+                            .then((response) => response.json())
+                            .then((res) => {
+                                if (res && res.code === 0 && res.data) {
+                                    console.log("跳转微信授权:", res.data);
+                                    location.href = res.data;
+                                }
+                            })
+                            .catch((err) => {
+                                console.error("获取微信授权地址失败：", err);
+                            });
+                    }
+
+                    if (isWeChatBrowser && !oauthRedirecting) {
+                        console.log("微信浏览器检测通过，开始屏蔽功能");
+
+                        // 调用微信 JS-SDK 接口
+                        fetch(`https://javaapi.tthaol.com/api/wechat/getJsapiTicket`, {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json",
+                            },
+                            body: JSON.stringify({
+                                url: currentDomain,
+                            }),
+                        })
+                            .then((response) => response.json())
+                            .then((res) => {
+                                if (res && res.data) {
+                                    console.log("微信 JS-SDK 初始化中...");
+                                    window.wxjs.config({
+                                        debug: false,
+                                        appId: res.data.appId,
+                                        timestamp: res.data.timestamp,
+                                        nonceStr: res.data.nonceStr,
+                                        signature: res.data.signature,
+                                        jsApiList: [
+                                            "hideOptionMenu",
+                                            "hideMenuItems",
+                                            "closeWindow",
+                                        ],
+                                    });
+
+                                    window.wxjs.ready(() => {
+                                        console.log("微信 JS-SDK 初始化成功，开始屏蔽分享功能");
+                                        window.wxjs.hideOptionMenu();
+                                        window.wxjs.hideMenuItems({
+                                            menuList: [
+                                                "menuItem:share:appMessage",
+                                                "menuItem:share:timeline",
+                                                "menuItem:copyUrl",
+                                                "menuItem:openWithQQBrowser",
+                                                "menuItem:openWithSafari",
+                                            ],
+                                        });
+                                    });
+
+                                    window.wxjs.error((err) => {
+                                        console.error("微信 JS-SDK 初始化失败：", err);
+                                    });
+                                } else {
+                                    console.error("微信接口返回数据格式不正确");
+                                }
+                            })
+                            .catch((err) => {
+                                console.error("获取微信 JS-SDK 配置失败：", err);
+                            });
+                    }
+
+                    // 获取 iframe 元素
+                    const iframe = document.getElementById('dynamicIframe');
+                    const loading = document.getElementById('loading');
+
+                    // 显示 iframe 并隐藏 loading（供 iframe 内 postMessage 跳转使用）
+                    function showIframe(url) {
+                        console.log(`iframe 加载页面: ${url}`);
+                        iframe.src = url;
+                        iframe.classList.add('active');
+                        loading.style.display = 'none';
+                    }
+
+                    /**
+                     * 拼平台跳转地址：参数写入 hash（/#/?...），对齐 uni-app H5 启动解析；
+                     * 补登录态；失效域名场景附带新分享链供平台展示。
+                     *
+                     * @param {string} link 落地校验返回的平台链接
+                     * @param {{fromInvalidDomain?: boolean, redirectLink?: string}} extra 附加参数
+                     * @returns {string} 最终跳转 URL
+                     */
+                    function buildPlatformJumpUrl(link, extra) {
+                        const url = new URL(link, window.location.href);
+                        // 1. 解析已有 hash query（#/?a=1 或 #/pages/x?a=1）；兼容旧版把参数放在 search 的链接
+                        let hashPath = '/';
+                        let hashQuery = '';
+                        if (url.hash && url.hash.length > 1) {
+                            const raw = url.hash.slice(1); // 去掉 #
+                            const qIdx = raw.indexOf('?');
+                            if (qIdx >= 0) {
+                                hashPath = raw.slice(0, qIdx) || '/';
+                                hashQuery = raw.slice(qIdx + 1);
+                            } else {
+                                hashPath = raw || '/';
+                            }
+                        }
+                        const params = new URLSearchParams(hashQuery);
+                        url.searchParams.forEach((value, key) => {
+                            if (!params.has(key)) {
+                                params.set(key, value);
+                            }
+                        });
+                        url.search = '';
+                        // 2. 补登录态与失效域名提示参数
+                        if (accessToken) {
+                            params.set('accessToken', accessToken);
+                        }
+                        if (refreshToken) {
+                            params.set('refreshToken', refreshToken);
+                        }
+                        if (extra && extra.fromInvalidDomain && extra.redirectLink) {
+                            params.set('fromInvalidDomain', '1');
+                            params.set('redirectLink', extra.redirectLink);
+                        }
+                        if (!hashPath.startsWith('/')) {
+                            hashPath = '/' + hashPath;
+                        }
+                        url.hash = hashPath + '?' + params.toString();
+                        return url.toString();
+                    }
+
+                    // 壳子页：调后端落地风控校验，通过后整页跳平台 H5
+                    const t = urlParams.t || '';
+                    const v = urlParams.v || '';
+                    const accessToken = urlParams.accessToken || '';
+                    const refreshToken = urlParams.refreshToken || '';
+                    let verifyUrl = `https://javaapi.tthaol.com/app-api/site/share/land/verify`;
+
+                    console.log(`请求落地风控: ${verifyUrl}`);
+
+                    // 微信授权回跳中（待跳授权）时跳过校验，避免重复请求
+                    if (!oauthRedirecting) {
+                        fetch(verifyUrl, {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json",
+                                "Authorization": "Bearer " + accessToken,
+                                "channel-type": channelType,
+                            },
+                            body: JSON.stringify({ t: t, v: v }),
+                        })
+                            .then((response) => response.json())
+                            .then((res) => {
+                                console.log("落地风控返回:", res);
+                                // yudao CommonResult：code=0 成功
+                                if (res && res.code === 0 && res.data) {
+                                    const { pass, interceptUrl, fromInvalidDomain, redirectLink, link } = res.data;
+                                    if (pass) {
+                                        if (!link) {
+                                            loading.textContent = "加载失败，请稍后再试。";
+                                            return;
+                                        }
+                                        // 放行：整页跳平台；失效域名把新分享链带给平台展示
+                                        const target = buildPlatformJumpUrl(link, {
+                                            fromInvalidDomain: !!fromInvalidDomain,
+                                            redirectLink: redirectLink || '',
+                                        });
+                                        console.log("跳转平台 H5:", target);
+                                        location.href = target;
+                                    } else if (interceptUrl) {
+                                        // 拦截：跳拦截博客地址
+                                        location.href = interceptUrl;
+                                    } else {
+                                        loading.textContent = "加载失败，请稍后再试。";
+                                    }
+                                } else {
+                                    loading.textContent = "加载失败，请稍后再试。";
+                                }
+                            })
+                            .catch((err) => {
+                                console.error("请求失败：", err);
+                                loading.textContent = "加载失败，请检查网络连接。";
+                            });
+                    }
+
+                    // 复制新分享链接
+                    document.getElementById('copyLink').addEventListener('click', function() {
+                        const link = document.getElementById('newLink').value;
+                        if (!link) return;
+                        if (navigator.clipboard) {
+                            navigator.clipboard.writeText(link).then(() => alert('已复制到剪贴板'));
+                        } else {
+                            const input = document.getElementById('newLink');
+                            input.select();
+                            document.execCommand('copy');
+                            alert('已复制到剪贴板');
+                        }
+                    });
+
+                    // 监听 postMessage 消息，用于 iframe 内部通知外层跳转
+                    window.addEventListener("message", function(event) {
+                        if (event.data && event.data.action === "redirect") {
+                            console.log(`收到 postMessage 跳转指令，iframe 加载: ${event.data.url}`);
+                            // 使用 iframe 加载新页面
+                            showIframe(event.data.url);
+                        }
+                    });
+
+                </script>
+            </body>
+        </html>
+    </foreignObject>
+</svg>
